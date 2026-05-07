@@ -21,7 +21,12 @@ class AnalysisResultView(APIView):
             report = AnalysisReport.objects.get(job_id=job_id)
         except AnalysisReport.DoesNotExist:
             return Response({'error': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
-        return Response({'status': 'completed'}, status=status.HTTP_200_OK)
+        return Response({
+            'job_id': report.job_id,
+            'created_at': report.created_at,
+            'excel_file': report.excel_file.url if report.excel_file else None,
+            'chart_image': report.chart_image.url if report.chart_image else None,
+        }, status=status.HTTP_200_OK)
 
 class DownloadExcelView(APIView):
     def get(self, request, job_id):

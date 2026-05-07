@@ -84,9 +84,19 @@ def scrape_task(job_id):
                         alert.accept() 
 
                 except Exception:
-                    this_retry += 1
-                    conn.sleep(job.retry_delay)
-                    conn.driver.refresh()
+                    occur = conn.stuck_page()
+                    if occur:
+                        conn.driver.back()
+                    else:
+                        this_retry += 1
+                        conn.sleep(job.retry_delay)
+                        conn.driver.refresh()
+
+            if cool_counter > 5:
+                job.error_log += 'Waiting to avoid IP block.\n'
+                job.save()
+                conn.sleep(3)
+                cool_counter = 0
 
             if abort:
                 break
