@@ -18,6 +18,8 @@ class ScrapeJob(models.Model):
     error_log = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    retry_delay   = models.IntegerField(default=5)
+    retry_count   = models.IntegerField(default=5)
 
 class SkippedUSN(models.Model):
     job = models.ForeignKey(ScrapeJob, on_delete=models.CASCADE)
