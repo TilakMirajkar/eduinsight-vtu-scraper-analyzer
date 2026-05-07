@@ -4,6 +4,8 @@ from rest_framework import status
 from apps.analyzer.models import AnalysisReport
 from .serializers import AnalyzeRequestSerializer
 from apps.analyzer.tasks import analyze_task
+from django.http import FileResponse
+import os
 
 class AnalyzeJobView(APIView):
     def post(self, request):
@@ -20,3 +22,35 @@ class AnalysisResultView(APIView):
         except AnalysisReport.DoesNotExist:
             return Response({'error': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
         return Response({'status': 'completed'}, status=status.HTTP_200_OK)
+
+class DownloadExcelView(APIView):
+    def get(self, request, job_id):
+        try:
+            report = AnalysisReport.objects.get(job_id=job_id)
+        except AnalysisReport.DoesNotExist:
+            return Response({'error': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not report.excel_file:
+            return Response({'error': 'Excel file not generated'}, status=status.HTTP_404_NOT_FOUND)
+
+        return FileResponse(
+            report.excel_file.open('rb'),
+            as_attachment=True,
+            filename=os.path.basename(report.excel_file.name)
+        )
+
+class DownloadChartView(APIView):
+    def get(self, request, job_id):
+        try:
+            report = AnalysisReport.objects.get(job_id=job_id)
+        except AnalysisReport.DoesNotExist:
+            return Response({'error': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not report.chart_image:
+            return Response({'error': 'Chart not generated'}, status=status.HTTP_404_NOT_FOUND)
+
+        return FileResponse(
+            report.chart_image.open('rb'),
+            as_attachment=True,
+            filename=os.path.basename(report.chart_image.name)
+        )

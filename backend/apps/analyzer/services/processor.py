@@ -249,6 +249,7 @@ def analyze_and_save(job) -> AnalysisReport:
     )
     plt.close(fig)
 
+    generate_excel(job, report)
     report.save()
     return report
 
@@ -264,3 +265,84 @@ def _to_grade_point(total, result: str) -> int:
     if total >= 50: return 5
     if total >= 40: return 4
     return 0
+
+def generate_excel(job, report) -> None:
+    import io
+    import pandas as pd
+    from django.core.files.base import ContentFile
+    from apps.analyzer.models import (
+        StudentResult, SubjectMark,
+        SubjectStats, StudentSGPA
+    )
+
+    # --- Student-wise results ---
+    marks_qs = SubjectMark.objects.filter(
+        student_result__job=job
+    ).select_related('student_result', 'subject')
+
+    student_rows = []
+    for m in marks_qs:
+        student_rows.append({
+            'USN': m.student_result.usn,
+            'Student Name': m.student_result.student_name,
+            'Subject Code': m.subject.subject_code,
+            'Subject Name': m.subject.subject_name,
+            'Semester': m.semester,
+            'Is Backlog': m.is_backlog,
+            'Internal Marks': m.internal_marks,
+            'External Marks': m.external_marks,
+            'Total': m.total,
+            'Result': m.result,
+            'Announced On': m.announced_on,
+        })
+    student_df = pd.DataFrame(student_rows)
+
+    # --- Subject-wise stats ---
+    stats_qs = SubjectStats.objects.filter(
+        report=report
+    ).select_related('subject')
+
+    stats_rows = []
+    for s in stats_qs:
+        stats_rows.append({
+            'Subject Code': s.subject.subject_code,
+            'Subject Name': s.subject.subject_name,
+            'Appeared': s.appeared,
+            'Passed': s.passed,
+            'Failed': s.failed,
+            'Absent': s.absent,
+            'Withheld': s.withheld,
+            'Not Eligible': s.not_eligible,
+            'Pass Percentage': s.pass_percentage,
+        })
+    stats_df = pd.DataFrame(stats_rows)
+
+    # --- SGPA ---
+    sgpa_qs = StudentSGPA.objects.filter(
+        report=report
+    ).select_related('student_result')
+
+    sgpa_rows = []
+    for s in sgpa_qs:
+        sgpa_rows.append({
+            'USN':          s.student_result.usn,
+            'Student Name': s.student_result.student_name,
+            'SGPA':         s.sgpa,
+        })
+    sgpa_df = pd.DataFrame(sgpa_rows)
+
+    # --- Write Excel ---
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        student_df.to_excel(writer, sheet_name='Student-wise Results', index=False)
+        stats_df.to_excel(writer, sheet_name='Subject-wise Stats', index=False)
+        if not sgpa_df.empty:
+            sgpa_df.to_excel(writer, sheet_name='SGPA Report', index=False)
+
+    output.seek(0)
+    excel_name = f'analysis_job_{job.id}.xlsx'
+    report.excel_file.save(
+        excel_name,
+        ContentFile(output.read()),
+        save=False
+    )

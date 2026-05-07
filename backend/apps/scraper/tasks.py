@@ -104,4 +104,5 @@ def scrape_task(job_id):
         job.save()
 
     finally:
-        conn.driver.quit()
+        if hasattr(conn, 'driver'):
+            conn.driver.quit()
