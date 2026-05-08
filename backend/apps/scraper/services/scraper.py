@@ -34,7 +34,9 @@ class Connection:
         self.driver.get(url)
 
     def enter_usn(self, usn):
-        self.driver.find_element(By.NAME, 'lns').send_keys(usn)
+        field = self.driver.find_element(By.NAME, 'lns')
+        field.clear()
+        field.send_keys(usn)
 
     def get_captcha(self):
         captcha_image = self.driver.find_element(By.CSS_SELECTOR, '[alt="CAPTCHA code"]').screenshot_as_png

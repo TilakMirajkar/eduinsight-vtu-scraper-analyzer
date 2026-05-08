@@ -21,4 +21,4 @@ class CaptchaHandler:
                 if pixel in self.pixel_range:
                     white_image.putpixel((x, y), pixel)
 
-        return pytesseract.image_to_string(white_image).strip()
+        return pytesseract.image_to_string(white_image).strip().replace(' ', '')
