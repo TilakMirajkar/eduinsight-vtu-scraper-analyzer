@@ -4,7 +4,7 @@ import pytesseract
 
 
 class CaptchaHandler:
-    pixel_range = [(i, i, i) for i in range(100, 160)]
+    pixel_range = {(i, i, i) for i in range(100, 160)}
 
     def get_captcha_from_image(self, target_image):
         image_data = BytesIO(target_image)

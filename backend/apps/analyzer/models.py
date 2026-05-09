@@ -13,6 +13,9 @@ class StudentResult(models.Model):
     usn = models.CharField(max_length=10)
     student_name = models.CharField(max_length=255)
 
+    class Meta:
+        unique_together = [('job', 'usn')]
+
 class SubjectMark(models.Model):
     class ResultChoices(models.TextChoices):
         PASS = 'P', 'Pass'
@@ -36,10 +39,20 @@ class SubjectMark(models.Model):
     reval_marks = models.IntegerField(null=True, blank=True)
     reval_result = models.CharField(max_length=2, choices=ResultChoices.choices, blank=True)
 
+    class Meta:
+        unique_together = [('student_result', 'subject', 'semester')]
+
 class AnalysisReport(models.Model):
+    class Status(models.TextChoices):
+        PENDING   = 'pending',   'Pending'
+        RUNNING   = 'running',   'Running'
+        COMPLETED = 'completed', 'Completed'
+        FAILED    = 'failed',    'Failed'
+
     job = models.OneToOneField(ScrapeJob, on_delete=models.PROTECT)
-    excel_file = models.FileField(upload_to='reports/excel/')
-    chart_image = models.ImageField(upload_to='reports/charts/')
+    excel_file  = models.FileField(upload_to='reports/excel/',  null=True, blank=True)
+    chart_image = models.ImageField(upload_to='reports/charts/', null=True, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
 
 class SubjectStats(models.Model):

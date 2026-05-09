@@ -1,4 +1,7 @@
+import matplotlib
 from apps.analyzer.models import StudentResult, SubjectMark, Subject, AnalysisReport
+
+matplotlib.use('Agg')
 
 RESULT_MAP = {
     'P': 'P',
@@ -35,11 +38,7 @@ def save_scraped_results(job, soup_dict: dict) -> None:
     for student_key, soup in soup_dict.items():
         usn, student_name = student_key.split('+', 1)
 
-        student_result, _ = StudentResult.objects.update_or_create(
-            job=job,
-            usn=usn,
-            defaults={'student_name': student_name}
-        )
+        student_result, _ = StudentResult.objects.update_or_create(job=job, usn=usn, defaults={'student_name': student_name})
 
         # Each div with this style = one semester block header
         sems_divs = soup.find_all('div', style='text-align:center;padding:5px;')
@@ -113,14 +112,22 @@ def save_scraped_results(job, soup_dict: dict) -> None:
                 )
 
         if marks_to_create:
-            SubjectMark.objects.bulk_create(marks_to_create)
+            SubjectMark.objects.bulk_create(
+                marks_to_create,
+                update_conflicts=True,
+                unique_fields=['student_result_id', 'subject_id', 'semester'],
+                update_fields=[
+                    'is_backlog', 'internal_marks', 'external_marks',
+                    'total', 'result', 'announced_on',
+                    'old_result', 'reval_marks', 'reval_result',
+                ],
+            )
 
 
 def analyze_and_save(job) -> AnalysisReport:
-    import matplotlib
-    matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     import io
+    from django.db import transaction
     from django.core.files.base import ContentFile
     from collections import defaultdict
     from apps.analyzer.models import (
@@ -128,9 +135,11 @@ def analyze_and_save(job) -> AnalysisReport:
         AnalysisReport, SubjectStats, StudentSGPA
     )
 
-    students = StudentResult.objects.filter(
-        job=job
-    ).prefetch_related('subjectmark_set__subject')
+    report, _ = AnalysisReport.objects.get_or_create(job=job)
+    report.status = AnalysisReport.Status.RUNNING
+    report.save(update_fields=['status'])
+
+    students = StudentResult.objects.filter(job=job).prefetch_related('subjectmark_set__subject')
 
     # --- Per-subject stat accumulators ---
     subject_stats = defaultdict(lambda: {
@@ -138,14 +147,9 @@ def analyze_and_save(job) -> AnalysisReport:
         'absent': 0, 'withheld': 0, 'not_eligible': 0
     })
 
-    # --- Create report first so FKs work ---
-    report, _ = AnalysisReport.objects.get_or_create(job=job)
-
     # --- SGPA + subject stats loop ---
     for student in students:
-        regular_marks = student.subjectmark_set.filter(
-            semester=job.exam_semester
-        )
+        regular_marks = list(student.subjectmark_set.filter(semester=job.exam_semester).select_related('subject'))
 
         # Accumulate subject stats
         for mark in regular_marks:
@@ -166,18 +170,11 @@ def analyze_and_save(job) -> AnalysisReport:
                 subject_stats[code]['not_eligible'] += 1
 
         # SGPA — only if all subjects have credits
-        all_marks = student.subjectmark_set.filter(
-            semester=job.exam_semester
-        ).select_related('subject')
+        credits_available = (regular_marks and all(m.subject.subject_credits is not None for m in regular_marks))
 
-        credits_available = all(
-            m.subject.subject_credits is not None
-            for m in all_marks
-        )
-
-        if credits_available and all_marks.exists():
+        if credits_available:
             num, den = 0, 0
-            for mark in all_marks:
+            for mark in regular_marks:
                 c = mark.subject.subject_credits
                 gp = _to_grade_point(mark.total, mark.result)
                 num += gp * c
@@ -185,16 +182,10 @@ def analyze_and_save(job) -> AnalysisReport:
 
             sgpa = round(num / den, 2) if den > 0 else 0.0
 
-            StudentSGPA.objects.update_or_create(
-                report=report,
-                student_result=student,
-                defaults={'sgpa': sgpa}
-            )
+            StudentSGPA.objects.update_or_create(report=report, student_result=student, defaults={'sgpa': sgpa})
 
     # --- Save SubjectStats ---
-    subjects = Subject.objects.filter(
-        subject_code__in=subject_stats.keys()
-    )
+    subjects = Subject.objects.filter(subject_code__in=subject_stats.keys())
     subject_map = {s.subject_code: s for s in subjects}
 
     stats_to_create = []
@@ -202,34 +193,35 @@ def analyze_and_save(job) -> AnalysisReport:
 
     for code, stats in subject_stats.items():
         appeared = stats['appeared']
-        passed   = stats['passed']
-        pct      = round(passed / appeared * 100, 2) if appeared > 0 else 0.0
+        passed = stats['passed']
+        pct = round(passed / appeared * 100, 2) if appeared > 0 else 0.0
 
         stats_to_create.append(
             SubjectStats(
-                report       = report,
-                subject      = subject_map[code],
-                appeared     = appeared,
-                passed       = passed,
-                failed       = stats['failed'],
-                absent       = stats['absent'],
-                withheld     = stats['withheld'],
-                not_eligible = stats['not_eligible'],
-                pass_percentage = pct,
+                report=report,
+                subject=subject_map[code],
+                appeared=appeared,
+                passed=passed,
+                failed=stats['failed'],
+                absent=stats['absent'],
+                withheld=stats['withheld'],
+                not_eligible=stats['not_eligible'],
+                pass_percentage=pct,
             )
         )
         labels.append(code)
         pass_percentages.append(pct)
 
-    SubjectStats.objects.filter(report=report).delete()
-    SubjectStats.objects.bulk_create(stats_to_create)
+    with transaction.atomic():
+        SubjectStats.objects.filter(report=report).delete()
+        SubjectStats.objects.bulk_create(stats_to_create)
 
     # --- Generate chart ---
     fig, ax = plt.subplots(figsize=(max(10, len(labels) * 1.5), 6))
     ax.bar(labels, pass_percentages)
     ax.set_xlabel('Subject Code')
     ax.set_ylabel('Pass Percentage')
-    ax.set_title('Subject-wise Pass Percentages')
+    ax.set_title('Subject-wise pass percentages')
     ax.set_xticks(range(len(labels)))
     ax.set_xticklabels(labels, rotation=45, ha='right')
 
@@ -238,18 +230,14 @@ def analyze_and_save(job) -> AnalysisReport:
 
     fig.tight_layout()
 
-    # Save chart to report
     buf = io.BytesIO()
     fig.savefig(buf, format='jpg')
     buf.seek(0)
-    report.chart_image.save(
-        f'chart_job_{job.id}.jpg',
-        ContentFile(buf.read()),
-        save=False
-    )
+    report.chart_image.save(f'chart_job_{job.id}.jpg', ContentFile(buf.read()), save=False)
     plt.close(fig)
 
     generate_excel(job, report)
+    report.status = AnalysisReport.Status.COMPLETED
     report.save()
     return report
 
@@ -275,32 +263,52 @@ def generate_excel(job, report) -> None:
         SubjectStats, StudentSGPA
     )
 
-    # --- Student-wise results ---
     marks_qs = SubjectMark.objects.filter(
         student_result__job=job
-    ).select_related('student_result', 'subject')
+    ).select_related('student_result', 'subject').order_by(
+        'student_result__usn', 'is_backlog', 'subject__subject_code'
+    )
 
-    student_rows = []
+    student_info = {}
     for m in marks_qs:
-        student_rows.append({
-            'USN': m.student_result.usn,
-            'Student Name': m.student_result.student_name,
-            'Subject Code': m.subject.subject_code,
-            'Subject Name': m.subject.subject_name,
-            'Semester': m.semester,
-            'Is Backlog': m.is_backlog,
-            'Internal Marks': m.internal_marks,
-            'External Marks': m.external_marks,
-            'Total': m.total,
-            'Result': m.result,
-            'Announced On': m.announced_on,
-        })
+        usn = m.student_result.usn
+        name = m.student_result.student_name
+        if usn not in student_info:
+            student_info[usn] = {'name': name, 'regular': {}, 'backlogs': []}
+
+        code = m.subject.subject_code
+        if not m.is_backlog:
+            student_info[usn]['regular'][code] = {
+                'Internal': m.internal_marks,
+                'External': m.external_marks,
+                'Total':    m.total,
+                'Result':   m.result,
+            }
+        else:
+            student_info[usn]['backlogs'].append(f"{code}(Sem {m.semester}): {m.result}")
+
+    # Determine the ordered column set from regular subjects only
+    all_codes = sorted({code for info in student_info.values() for code in info['regular']},)
+
+    # Build one row per student
+    student_rows = []
+    for usn, data in student_info.items():
+        row = {'USN': usn, 'Student Name': data['name']}
+
+        for code in all_codes:
+            marks = data['regular'].get(code, {})
+            row[f'{code} Internal'] = marks.get('Internal', '')
+            row[f'{code} External'] = marks.get('External', '')
+            row[f'{code} Total'] = marks.get('Total',    '')
+            row[f'{code} Result'] = marks.get('Result',   '')
+
+        row['Backlog Subjects'] = ', '.join(data['backlogs']) or 'None'
+        student_rows.append(row)
+
     student_df = pd.DataFrame(student_rows)
 
     # --- Subject-wise stats ---
-    stats_qs = SubjectStats.objects.filter(
-        report=report
-    ).select_related('subject')
+    stats_qs = SubjectStats.objects.filter(report=report).select_related('subject')
 
     stats_rows = []
     for s in stats_qs:
@@ -318,16 +326,14 @@ def generate_excel(job, report) -> None:
     stats_df = pd.DataFrame(stats_rows)
 
     # --- SGPA ---
-    sgpa_qs = StudentSGPA.objects.filter(
-        report=report
-    ).select_related('student_result')
+    sgpa_qs = StudentSGPA.objects.filter(report=report).select_related('student_result')
 
     sgpa_rows = []
     for s in sgpa_qs:
         sgpa_rows.append({
-            'USN':          s.student_result.usn,
+            'USN': s.student_result.usn,
             'Student Name': s.student_result.student_name,
-            'SGPA':         s.sgpa,
+            'SGPA': s.sgpa,
         })
     sgpa_df = pd.DataFrame(sgpa_rows)
 
@@ -341,8 +347,4 @@ def generate_excel(job, report) -> None:
 
     output.seek(0)
     excel_name = f'analysis_job_{job.id}.xlsx'
-    report.excel_file.save(
-        excel_name,
-        ContentFile(output.read()),
-        save=False
-    )
+    report.excel_file.save(excel_name, ContentFile(output.read()), save=False)

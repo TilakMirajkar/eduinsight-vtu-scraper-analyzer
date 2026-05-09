@@ -99,6 +99,10 @@ def scrape_task(job_id):
                         conn.sleep(job.retry_delay)
                         conn.driver.refresh()
 
+            else:
+                job.error_log += f'Max retries exhausted for {usn}. Skipping.\n'
+                SkippedUSN.objects.create(job=job, usn=usn, reason='Max retries exhausted')
+
             job.progress = int((i + 1) / total * 100)
             job.save(update_fields=['error_log', 'progress'])
 

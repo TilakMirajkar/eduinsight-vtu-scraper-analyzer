@@ -31,14 +31,22 @@ class ScrapeJobCreateSerializer(serializers.ModelSerializer):
         return value
 
     def validate_usn_sequence(self, value):
-        if not re.match(r'^\d{1,3}([-,]\d{1,3})*$', value.strip()):
-            raise serializers.ValidationError('Enter numbers in format: 1-100 or 1,2,3 or 1,2-5')
-        return self._parse_sequence(value)
+        try:
+            result = self._parse_sequence(value.strip())
+        except (ValueError, AttributeError):
+            raise serializers.ValidationError('Invalid format. Use ranges (1-100), comma lists (1,2,3), or both (1,2-5).')
+        if not result:
+            raise serializers.ValidationError('Sequence cannot be empty.')
+        return result
 
     def _parse_sequence(self, s: str) -> list:
-        def parse_part(part):
+        def parse_part(part: str) -> list:
+            part = part.strip()
             if '-' in part:
-                start, end = map(int, part.split('-'))
+                pieces = part.split('-')
+                if len(pieces) != 2:
+                    raise ValueError(f'Invalid range: {part!r}')
+                start, end = int(pieces[0]), int(pieces[1])
                 if start > end:
                     start, end = end, start
                 return list(range(start, end + 1))
@@ -46,7 +54,7 @@ class ScrapeJobCreateSerializer(serializers.ModelSerializer):
 
         seq = []
         for part in s.split(','):
-            seq.extend(parse_part(part.strip()))
+            seq.extend(parse_part(part))
         return sorted(set(seq))
 
     def validate(self, data):

@@ -11,26 +11,33 @@ from selenium.common.exceptions import (
     NoSuchElementException,
 )
 from bs4 import BeautifulSoup
+import os
 import time
 from apps.scraper.services.captcha import CaptchaHandler
 
 
 class Connection:
 
+    def _get_options(self, headless=True):
+        options = Options()
+        if headless:
+            options.add_argument('--headless=new')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        chrome_binary = os.environ.get('CHROME_BINARY')
+        if chrome_binary:
+            options.binary_location = chrome_binary
+
+        return options
+
     def check_internet(self):
         options = self._get_options()
-        self.driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
-            options=options
-        )
+        self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         self.driver.get('https://www.feynmanlectures.caltech.edu/III_toc.html')
-    
+
     def connect(self, url, mode=False):
         options = self._get_options(headless=not mode)
-        self.driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
-            options=options
-        )
+        self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         self.driver.get(url)
 
     def enter_usn(self, usn):
@@ -74,12 +81,3 @@ class Connection:
     def stuck_page(self):
         soup = BeautifulSoup(self.driver.page_source, 'lxml')
         return soup.find_all('b', string='University Seat Number')
-
-    def _get_options(self, headless=True):
-        options = Options()
-        if headless:
-            options.add_argument('--headless=new')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.binary_location = '/usr/bin/google-chrome-stable'
-        return options
