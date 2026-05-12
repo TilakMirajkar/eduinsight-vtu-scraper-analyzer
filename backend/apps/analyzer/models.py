@@ -56,7 +56,7 @@ class AnalysisReport(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 class SubjectStats(models.Model):
-    report = models.ForeignKey(AnalysisReport, on_delete=models.PROTECT)
+    report = models.ForeignKey(AnalysisReport, on_delete=models.CASCADE)
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
     appeared = models.IntegerField()
     passed = models.IntegerField()
@@ -70,3 +70,6 @@ class StudentSGPA(models.Model):
     report = models.ForeignKey(AnalysisReport, on_delete=models.PROTECT)
     student_result = models.ForeignKey(StudentResult, on_delete=models.CASCADE)
     sgpa = models.DecimalField(max_digits=4, decimal_places=2)
+
+    class Meta:
+        unique_together = [('report', 'student_result')]

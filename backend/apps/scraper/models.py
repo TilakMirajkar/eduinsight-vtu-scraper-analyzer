@@ -21,6 +21,9 @@ class ScrapeJob(models.Model):
     retry_delay = models.IntegerField(default=5)
     retry_count = models.IntegerField(default=5)
 
+    def __str__(self):
+        return f"Job {self.id} - {self.usn_prefix} ({self.status})"
+
 class SkippedUSN(models.Model):
     job = models.ForeignKey(ScrapeJob, on_delete=models.CASCADE)
     usn = models.CharField(max_length=10)

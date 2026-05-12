@@ -22,6 +22,7 @@ class AnalysisResultView(APIView):
         except AnalysisReport.DoesNotExist:
             return Response({'error': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
         return Response({
+            'status': report.status,
             'job_id': report.job_id,
             'created_at': report.created_at,
             'excel_file': report.excel_file.url if report.excel_file else None,

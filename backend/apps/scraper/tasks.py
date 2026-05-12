@@ -8,7 +8,7 @@ from apps.analyzer.services.processor import save_scraped_results
 from celery.utils.log import get_task_logger
 logger = get_task_logger(__name__)
 
-@shared_task
+@shared_task(soft_time_limit=3600, time_limit=3660)
 def scrape_task(job_id):
     try:
         job = ScrapeJob.objects.get(id=job_id)
