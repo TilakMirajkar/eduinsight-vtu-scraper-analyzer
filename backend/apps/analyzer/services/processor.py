@@ -85,7 +85,7 @@ def save_scraped_results(job, soup_dict: dict) -> None:
 
                 payload = dict(zip(mark_headers, mark_values))
 
-                subject, _ = Subject.objects.get_or_create(
+                subject, _ = Subject.objects.update_or_create(
                     subject_code=subject_code,
                     defaults={
                         'subject_name': subject_name,

@@ -22,9 +22,12 @@ class ScrapeJob(models.Model):
     retry_count = models.IntegerField(default=5)
 
     def __str__(self):
-        return f"Job {self.id} - {self.usn_prefix} ({self.status})"
+        return f"Job {self.id} — {self.usn_prefix} | Sem {self.exam_semester} ({self.status})"
 
 class SkippedUSN(models.Model):
     job = models.ForeignKey(ScrapeJob, on_delete=models.CASCADE)
     usn = models.CharField(max_length=10)
     reason = models.CharField(max_length=255)
+
+    def __str__(self):
+        return f"{self.usn} skipped — {self.reason}"
