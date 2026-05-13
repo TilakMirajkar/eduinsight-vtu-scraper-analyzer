@@ -1,7 +1,6 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -15,6 +14,7 @@ import os
 import time
 from apps.scraper.services.captcha import CaptchaHandler
 
+service = Service(os.environ.get('CHROME_DRIVER', '/usr/bin/chromedriver'))
 
 class Connection:
 
@@ -23,6 +23,7 @@ class Connection:
         if headless:
             options.add_argument('--headless=new')
         options.add_argument('--no-sandbox')
+        options.add_argument('--disable-gpu')
         options.add_argument('--disable-dev-shm-usage')
         chrome_binary = os.environ.get('CHROME_BINARY')
         if chrome_binary:
@@ -32,12 +33,12 @@ class Connection:
 
     def check_internet(self):
         options = self._get_options()
-        self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        self.driver = webdriver.Chrome(service=service, options=options)
         self.driver.get('https://www.feynmanlectures.caltech.edu/III_toc.html')
 
     def connect(self, url, mode=False):
         options = self._get_options(headless=not mode)
-        self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        self.driver = webdriver.Chrome(service=service, options=options)
         self.driver.get(url)
 
     def enter_usn(self, usn):

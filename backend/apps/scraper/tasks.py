@@ -30,7 +30,6 @@ def scrape_task(job_id):
 
         for i, num in enumerate(job.usn_sequence):
             usn = f'{job.usn_prefix}{num:03d}'
-            logger.info(f"Processing USN: {usn}")
             this_retry = 0
 
             while this_retry < job.retry_count:

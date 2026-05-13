@@ -19,5 +19,7 @@ CSRF_COOKIE_SECURE = True
 SECURE_HSTS_SECONDS = 31536000   # 1 year
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 
-# FIX: STATIC_ROOT is required for `collectstatic` — was missing entirely.
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+CHROME_DRIVER = "/usr/bin/chromedriver"
+CHROME_BINARY = "/usr/bin/chromium"
