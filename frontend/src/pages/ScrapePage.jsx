@@ -1,11 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Loader2, ArrowRight, RotateCcw, CheckCircle2, XCircle, Clock } from 'lucide-react'
+import { Loader2, ArrowRight, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
-import { Progress } from '@/components/ui/progress'
 import {
   Select,
   SelectContent,
@@ -13,29 +11,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useScrapeJob } from '@/hooks/useScrapeJob'
-
-const STATUS_CONFIG = {
-  pending:   { label: 'Pending',   variant: 'pending',   Icon: Clock },
-  running:   { label: 'Scraping…', variant: 'running',   Icon: Loader2 },
-  completed: { label: 'Completed', variant: 'completed', Icon: CheckCircle2 },
-  failed:    { label: 'Failed',    variant: 'failed',    Icon: XCircle },
-}
-
-function StatusBadge({ status }) {
-  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.pending
-  const { label, variant, Icon } = cfg
-  return (
-    <Badge variant={variant}>
-      <Icon className={`h-3 w-3 ${status === 'running' ? 'animate-spin' : ''}`} />
-      {label}
-    </Badge>
-  )
-}
+import { createScrapeJob } from '@/api/scraper'
 
 export default function ScrapePage() {
   const navigate = useNavigate()
-  const { createJob, jobId, jobStatus, isCreating, createError, resetJob } = useScrapeJob()
+  const [isCreating, setIsCreating] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
 
   const [form, setForm] = useState({
     usn_prefix: '',
@@ -43,10 +25,10 @@ export default function ScrapePage() {
     exam_semester: '',
     result_url: '',
   })
-  const [formError, setFormError] = useState('')
 
   function handleChange(e) {
-    setFormError('')
+    setError('')
+    setSuccess(false)
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }))
   }
 
@@ -54,200 +36,122 @@ export default function ScrapePage() {
     setForm((f) => ({ ...f, exam_semester: value }))
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
-    setFormError('')
+    setError('')
     const { usn_prefix, usn_sequence, exam_semester, result_url } = form
+    
     if (!usn_prefix || !usn_sequence || !exam_semester || !result_url) {
-      setFormError('Please fill in all required fields.')
+      setError('Please fill in all required fields.')
       return
     }
-    createJob({
-      usn_prefix,
-      usn_sequence,
-      exam_semester: parseInt(exam_semester),
-      result_url,
-    })
+
+    try {
+      setIsCreating(true)
+      await createScrapeJob({
+        usn_prefix,
+        usn_sequence,
+        exam_semester: parseInt(exam_semester),
+        result_url,
+      })
+      
+      setSuccess(true)
+      setForm({ usn_prefix: '', usn_sequence: '', exam_semester: '', result_url: '' })
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to start job. Please try again.')
+    } finally {
+      setIsCreating(false)
+    }
   }
 
-  const isJobActive = !!jobId
-  const isDone = jobStatus?.status === 'completed'
-  const isFailed = jobStatus?.status === 'failed'
-  const progress = jobStatus?.progress ?? 0
-
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-4">
+    <main className="mt-24 max-h-screen flex flex-col items-center justify-center px-4">
       <div className="w-full max-w-lg animate-fade-in">
+        <div className="mb-10 text-center">
+          <h1 className="text-3xl font-semibold tracking-tight mb-2">
+            Start Scraping Process
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            Fill the form to trigger a new automated background task
+          </p>
+        </div>
 
-        {!isJobActive ? (
-          /* ── FORM STATE ── */
-          <>
-            <div className="mb-10 text-center">
-              <h1 className="text-3xl font-semibold tracking-tight mb-2">
-                Welcome to EduInsight
-              </h1>
-              <p className="text-muted-foreground text-sm">
-                Fill the form to start the automated scraping process
-              </p>
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="usn_prefix">Prefix USN</Label>
+              <Input
+                id="usn_prefix"
+                name="usn_prefix"
+                placeholder="2AG21CS"
+                value={form.usn_prefix}
+                onChange={handleChange}
+                autoComplete="off"
+                spellCheck={false}
+                style={{ textTransform: 'uppercase' }}
+              />
             </div>
-
-            <form onSubmit={handleSubmit} noValidate className="space-y-4">
-              {/* Row 1: Prefix + Semester */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="usn_prefix">Prefix USN</Label>
-                  <Input
-                    id="usn_prefix"
-                    name="usn_prefix"
-                    placeholder="2AG21CS"
-                    value={form.usn_prefix}
-                    onChange={handleChange}
-                    autoComplete="off"
-                    spellCheck={false}
-                    style={{ textTransform: 'uppercase' }}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="exam_semester">Semester</Label>
-                  <Select onValueChange={handleSemesterChange} value={form.exam_semester}>
-                    <SelectTrigger id="exam_semester">
-                      <SelectValue placeholder="Select…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Array.from({ length: 8 }, (_, i) => i + 1).map((sem) => (
-                        <SelectItem key={sem} value={String(sem)}>
-                          Semester {sem}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Row 2: Range */}
-              <div className="space-y-1.5">
-                <Label htmlFor="usn_sequence">Range</Label>
-                <Input
-                  id="usn_sequence"
-                  name="usn_sequence"
-                  placeholder="1-60  or  1,2,5-10"
-                  value={form.usn_sequence}
-                  onChange={handleChange}
-                  autoComplete="off"
-                />
-              </div>
-
-              {/* Row 3: URL */}
-              <div className="space-y-1.5">
-                <Label htmlFor="result_url">Result URL</Label>
-                <Input
-                  id="result_url"
-                  name="result_url"
-                  type="url"
-                  placeholder="https://results.vtu.ac.in/DJcbcs25/index.php"
-                  value={form.result_url}
-                  onChange={handleChange}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </div>
-
-              {/* Error */}
-              {(formError || createError) && (
-                <p className="text-sm text-destructive animate-fade-in">
-                  {formError || createError?.message}
-                </p>
-              )}
-
-              <Button
-                type="submit"
-                size="lg"
-                className="w-full mt-2"
-                disabled={isCreating}
-              >
-                {isCreating ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Starting…
-                  </>
-                ) : (
-                  'Start the automated process'
-                )}
-              </Button>
-            </form>
-
-            <p className="mt-6 text-center text-xs text-muted-foreground leading-relaxed">
-              Once the process is finished, your Excel file<br />will be ready to download
-            </p>
-          </>
-        ) : (
-          /* ── PROGRESS STATE ── */
-          <div className="space-y-6 animate-fade-in">
-            <div className="text-center">
-              <h1 className="text-2xl font-semibold tracking-tight mb-1.5">
-                {isDone ? 'Scraping complete' : isFailed ? 'Scraping failed' : 'Scraping in progress'}
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Job ID <span className="font-mono text-foreground">{jobId}</span>
-                {jobStatus?.usn_prefix && (
-                  <> · <span className="font-mono">{jobStatus.usn_prefix}</span></>
-                )}
-              </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="exam_semester">Semester</Label>
+              <Select onValueChange={handleSemesterChange} value={form.exam_semester}>
+                <SelectTrigger id="exam_semester">
+                  <SelectValue placeholder="Select…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 8 }, (_, i) => i + 1).map((sem) => (
+                    <SelectItem key={sem} value={String(sem)}>Semester {sem}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-
-            {/* Status + Progress */}
-            <div className="rounded-xl border border-border p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <StatusBadge status={jobStatus?.status ?? 'pending'} />
-                <span className="text-sm font-mono text-muted-foreground">
-                  {progress}%
-                </span>
-              </div>
-              <Progress value={progress} />
-            </div>
-
-            {/* Log */}
-            {jobStatus?.error_log && (
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Log
-                </p>
-                <pre className="rounded-xl border border-border bg-muted/40 p-3.5 text-xs font-mono text-foreground leading-relaxed overflow-y-auto max-h-52 whitespace-pre-wrap break-words">
-                  {jobStatus.error_log}
-                </pre>
-              </div>
-            )}
-
-            {/* Actions */}
-            <div className="flex gap-2">
-              {isDone && (
-                <Button
-                  size="lg"
-                  className="flex-1"
-                  onClick={() => navigate('/analyze', { state: { jobId } })}
-                >
-                  Analyze Results
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              )}
-              <Button
-                variant={isDone ? 'outline' : 'secondary'}
-                size={isDone ? 'lg' : 'lg'}
-                className={isDone ? '' : 'flex-1'}
-                onClick={resetJob}
-              >
-                <RotateCcw className="h-4 w-4" />
-                {isDone ? 'New job' : 'Cancel'}
-              </Button>
-            </div>
-
-            {isDone && (
-              <p className="text-center text-xs text-muted-foreground">
-                Click <strong>Analyze Results</strong> to generate your Excel report and charts
-              </p>
-            )}
           </div>
-        )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="usn_sequence">Range</Label>
+            <Input
+              id="usn_sequence"
+              name="usn_sequence"
+              placeholder="1-60  or  1,2,5-10"
+              value={form.usn_sequence}
+              onChange={handleChange}
+              autoComplete="off"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="result_url">Result URL</Label>
+            <Input
+              id="result_url"
+              name="result_url"
+              type="url"
+              placeholder="https://results.vtu.ac.in/DJcbcs25/index.php"
+              value={form.result_url}
+              onChange={handleChange}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+
+          {error && <p className="text-sm text-destructive animate-fade-in">{error}</p>}
+          
+          {success && (
+            <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50/50 p-3 rounded-md border border-green-100 animate-fade-in">
+              <CheckCircle2 className="h-4 w-4" />
+              Scraping started successfully in the background!
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <Button type="submit" size="lg" className="flex-1" disabled={isCreating}>
+              {isCreating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {isCreating ? 'Starting…' : 'Start Scrape Job'}
+            </Button>
+            
+            <Button type="button" variant="secondary" size="lg" onClick={() => navigate('/analyze')}>
+              View Dashboard <ArrowRight className="h-4 w-4 ml-2" />
+            </Button>
+          </div>
+        </form>
       </div>
     </main>
   )

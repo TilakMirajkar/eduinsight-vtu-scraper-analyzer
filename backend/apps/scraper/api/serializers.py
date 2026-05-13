@@ -1,6 +1,7 @@
 import re
 from rest_framework import serializers
 from apps.scraper.models import ScrapeJob
+from apps.analyzer.models import AnalysisReport
 
 
 class ScrapeJobCreateSerializer(serializers.ModelSerializer):
@@ -62,10 +63,19 @@ class ScrapeJobCreateSerializer(serializers.ModelSerializer):
         return data
 
 class ScrapeJobStatusSerializer(serializers.ModelSerializer):
+    analysis_status = serializers.SerializerMethodField()
+
     class Meta:
         model  = ScrapeJob
-        fields = [
-            'id', 'status', 'progress',
-            'error_log', 'created_at', 'completed_at'
+        fields = ['id', 'usn_prefix', 'usn_sequence',
+            'exam_semester', 'status', 'progress',
+            'error_log', 'analysis_status',
         ]
         read_only_fields = fields
+
+    def get_analysis_status(self, obj):
+        try:
+            report = AnalysisReport.objects.get(job_id=obj.id)
+            return report.status
+        except AnalysisReport.DoesNotExist:
+            return None
